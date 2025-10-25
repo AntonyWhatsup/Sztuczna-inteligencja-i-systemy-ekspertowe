@@ -1,8 +1,9 @@
-# visualization.py
+# visualization.py - ФІНАЛЬНА ВЕРСІЯ: ПРЯМОКУТНІ ПАНЕЛІ ТА СЕКТОРИ З ВІДСТУПАМИ
+
 import os
-import math
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle, FancyBboxPatch, Circle
+from matplotlib.patches import Rectangle
+# FancyBboxPatch та Circle видалені, оскільки більше не потрібні
 
 # ---------- 1) PARETO FRONT (стоимость ↔ энергия) ----------
 def plot_pareto_front(results, filename="pareto_front.png"):
@@ -14,11 +15,10 @@ def plot_pareto_front(results, filename="pareto_front.png"):
     shadows  = [r[1][2] for r in results]
 
     plt.figure()
-    plt.scatter(costs, energies, c=shadows)  # цвет = %тени
+    plt.scatter(costs, energies, c=shadows, cmap="viridis")
     plt.xlabel("Cost (PLN)")
     plt.ylabel("Annual Energy (kWh)")
-    cbar = plt.colorbar()
-    cbar.set_label("Shadow (%)")
+    cbar = plt.colorbar(label="Shadow (%)")
     plt.title("Pareto Front: Cost vs Energy")
 
     os.makedirs("results", exist_ok=True)
@@ -26,7 +26,12 @@ def plot_pareto_front(results, filename="pareto_front.png"):
     plt.savefig(os.path.join("results", filename), dpi=150)
     plt.close()
 
+# --- Backward-compat shim ---
+def plot_pareto(results):
+    return plot_pareto_front(results, filename="pareto.png")
+
 # ---------- 2) PARETO CHART (столбцы + кумулятив) ----------
+# Залишаємо без змін
 def plot_pareto_chart(contrib: dict, title="Pareto Chart", unit="PLN", filename="pareto_chart.png"):
     """
     contrib: dict {категория: вклад} — будет отсортирован по убыванию.
@@ -58,105 +63,121 @@ def plot_pareto_chart(contrib: dict, title="Pareto Chart", unit="PLN", filename=
     plt.savefig(os.path.join("results", filename), dpi=150)
     plt.close()
 
-# ---------- 3) ИКОНКА МОДУЛЯ КАК НА РЕФЕРЕНСЕ ----------
+# ---------- 3) ІКОНКА МОДУЛЯ (Прямокутна, без скруглень) ----------
 def _draw_module_icon(
     ax, x, y, w, h,
     cell_rows=12, cell_cols=4,
-    draw_hole=True,
     angle_label=None
 ):
     """
-    Рисует тонкий вертикальный модуль с белой рамкой и чёрной решёткой ячеек.
-    Без проводов. Ориентируется по прямоугольнику (x,y,w,h).
+    Малює прямокутний модуль із сіткою ячейок та білим текстом кута нахилу.
+    Панель не має скруглень.
     """
-    # Внешняя белая рамка со скруглением
-    rr = min(w, h) * 0.12  # радиус скругления
-    frame = FancyBboxPatch((x, y), w, h,
-                           boxstyle=f"round,pad=0.02,rounding_size={rr}",
-                           linewidth=1.5, edgecolor="black", facecolor="white")
-    ax.add_patch(frame)
+    # Основний прямокутник модуля (темно-сірий фон, що імітує рамку)
+    ax.add_patch(Rectangle((x, y), w, h,
+                           linewidth=1.0, edgecolor="black", facecolor="#424242", zorder=1))
 
-    # Внутреннее "стекло" — оставляем белым, клетки нарисуем поверх
-    margin = 0.06 * min(w, h)
+    # Внутрішня область
+    margin = 0.04 * min(w, h)
     gx, gy = x + margin, y + margin
     gw, gh = w - 2 * margin, h - 2 * margin
 
-    # Отверстие сверху по центру (как на фото)
-    if draw_hole:
-        r = min(w, h) * 0.03
-        ax.add_patch(Circle((x + w/2, y + h - margin*0.55), r, facecolor="white", edgecolor="lightgray"))
-
-    # Сетка ячеек: чёрные прямоугольники с белыми "швами"
-    gap = 0.08  # доля шага под зазор
+    # Сетка ячеек: ТЕМНО-СИНІ прямокутники
+    gap = 0.08
     dx, dy = gw / cell_cols, gh / cell_rows
     pad_x, pad_y = dx * gap, dy * gap
     for r_i in range(cell_rows):
         for c_i in range(cell_cols):
             cx = gx + c_i * dx + pad_x/2
             cy = gy + r_i * dy + pad_y/2
+            
+            # Колір ячейки
+            cell_color = "#1565C0" 
+            
             ax.add_patch(Rectangle((cx, cy), dx - pad_x, dy - pad_y,
-                                   facecolor="black", edgecolor="black", linewidth=0.2))
+                                   facecolor=cell_color, edgecolor="#64B5F6", linewidth=0.1, zorder=2))
 
-    # Необязательная подпись угла
+    # Білий, жирний текст кута нахилу
     if angle_label is not None:
-        ax.text(x + w/2, y + margin*0.5, f"{angle_label}°", ha="center", va="bottom", fontsize=7)
+        text_x = x + w/2
+        text_y = y + margin + (gh / cell_rows * 0.5) # Позиціонуємо у верхній частині панелі, ближче до краю
+        
+        # Додаємо тінь або контрастний обвід для читабельності
+        ax.text(text_x + 0.005, text_y + 0.005, f"{angle_label}°", 
+                ha="center", va="center", fontsize=8, color='black', weight='bold', zorder=3, alpha=0.5) # Тінь
+        
+        # Основний білий текст
+        ax.text(text_x, text_y, f"{angle_label}°", 
+                ha="center", va="center", fontsize=8, color='white', weight='bold', zorder=4)
 
-# ---------- 4) ПЛАН КРЫШИ С МОДУЛЯМИ-ИКОНКАМИ ----------
+# ---------- 4) ПЛАН КРЫШИ (Прямокутний, з відступами) ----------
 def visualize_grid_layout(genome, angles, filename,
-                          panel_aspect=2.3,  # высота/ширина как у тонкого модуля
-                          cell_rows=12, cell_cols=4):
+                             cell_width_ratio=1.0,  # Ширина сектору сітки (залишаємо 1.0)
+                             cell_height_ratio=2.0, # Висота сектору сітки (збільшуємо до 2.0 для прямокутника)
+                             panel_aspect=2.3,      # Висота/ширина панелі (залишаємо 2.3)
+                             inset=0.1,            # Відступи між панеллю та краєм її сектору
+                             cell_rows=12, cell_cols=4):
     """
     genome: 2D numpy array {0,1}
-    angles: 2D numpy array тех же размеров (угол модуля, для подписи)
-    На каждую ячейку с 1 рисуется модуль в стиле референса.
+    angles: 2D numpy array тих же розмірів (кут модуля, для підпису)
     """
     rows, cols = genome.shape
 
-    fig_w = max(6, cols * 0.9)
-    fig_h = max(6, rows * 0.9)
+    # Фігура тепер враховує прямокутне співвідношення сторін секторів
+    fig_w = max(6, cols * cell_width_ratio * 0.8)
+    fig_h = max(6, rows * cell_height_ratio * 0.8)
     plt.figure(figsize=(fig_w, fig_h))
+    
     ax = plt.gca()
-    ax.set_xlim(0, cols)
-    ax.set_ylim(0, rows)
-    ax.set_aspect('equal')
+    # Обмеження осей відповідають новим прямокутним секторам
+    ax.set_xlim(0, cols * cell_width_ratio)
+    ax.set_ylim(0, rows * cell_height_ratio)
+    
+    # Співвідношення сторін вікна відображення
+    ax.set_aspect(cell_width_ratio / cell_height_ratio) 
+    
     ax.set_facecolor("#eaeaea")
-    plt.title("Solar Panel Layout (Reference-style Modules)")
-    plt.xlabel("Columns")
-    plt.ylabel("Rows")
+    plt.title("Solar Panel Layout (Rectangular Grid & Modules)")
+    plt.xlabel(f"Columns (x {cell_width_ratio} units)")
+    plt.ylabel(f"Rows (x {cell_height_ratio} units)")
 
-    # Рисуем сетку крыши
+    # Рисуємо сітку криші
     for c in range(cols + 1):
-        ax.axvline(c, color="white", linewidth=0.6)
+        ax.axvline(c * cell_width_ratio, color="white", linewidth=0.6)
     for r in range(rows + 1):
-        ax.axhline(r, color="white", linewidth=0.6)
+        ax.axhline(r * cell_height_ratio, color="white", linewidth=0.6)
 
-    # Каждый модуль вписываем в ячейку 1×1 с нужным аспектом
-    inset = 0.08  # поля внутри клетки
+    # Розміщення кожного модуля
     for r in range(rows):
         for c in range(cols):
             if genome[r, c] != 1:
                 continue
 
-            # Координаты клетки (нижний левый угол в системе matplotlib)
-            cell_x = c
-            cell_y = rows - r - 1  # инвертируем Y, чтобы (0,0) был внизу слева
+            # Координати сектору (клітинки)
+            cell_x_start = c * cell_width_ratio
+            cell_y_start = (rows - r - 1) * cell_height_ratio # інвертуємо Y
 
-            # Рассчитываем размеры модуля с сохранением panel_aspect
-            max_w = 1 - 2 * inset
-            max_h = 1 - 2 * inset
-            mod_h = min(max_h, max_w * panel_aspect)
+            # Максимальні розміри модуля всередині сектору з відступами
+            max_w = cell_width_ratio - 2 * inset
+            max_h = cell_height_ratio - 2 * inset
+            
+            # Розрахунок розмірів модуля, який вписується у сектор зі збереженням panel_aspect
+            # Модуль орієнтований вертикально: W = H / aspect
+            mod_h = max_h
             mod_w = mod_h / panel_aspect
-            if mod_w > max_w:  # редкий случай — подгон по ширине
+            
+            # Якщо ширина модуля більша за дозволену
+            if mod_w > max_w:
                 mod_w = max_w
                 mod_h = mod_w * panel_aspect
 
-            x0 = cell_x + 0.5 - mod_w / 2
-            y0 = cell_y + 0.5 - mod_h / 2
+            # Координати для центрованого модуля в секторі
+            x0 = cell_x_start + (cell_width_ratio / 2) - (mod_w / 2)
+            y0 = cell_y_start + (cell_height_ratio / 2) - (mod_h / 2)
 
             _draw_module_icon(
                 ax, x0, y0, mod_w, mod_h,
                 cell_rows=cell_rows, cell_cols=cell_cols,
-                draw_hole=True,
                 angle_label=int(angles[r, c]) if angles is not None else None
             )
 
@@ -165,8 +186,3 @@ def visualize_grid_layout(genome, angles, filename,
     out_path = os.path.join("results", "layouts", f"{filename}.png")
     plt.savefig(out_path, dpi=200)
     plt.close()
-    
-# --- Backward-compat shim ---
-def plot_pareto(results):
-    # сохраняет прежнее имя для evolution.py
-    return plot_pareto_front(results, filename="pareto.png")
