@@ -1,59 +1,97 @@
 # panel.py
+import math
 
 class Panel:
-    def __init__(self, width: float, height: float, gap_x: float = 0, gap_y: float = 0):
-        """
-        width, height – розміри панелі (мм або м)
-        gap_x, gap_y – відстань між панелями (мм або м)
-        """
+    """Parametry panelu i odstępów montażowych (Параметри панелі та монтажних зазорів)."""
+    def __init__(self, width, height, gap_x=0, gap_y=0, clamp_margin=30):
         self.width = width
         self.height = height
         self.gap_x = gap_x
         self.gap_y = gap_y
+        self.clamp_margin = clamp_margin
 
 
-def fill_roof_with_panels(roof, panel, border_x: float = 0, border_y: float = 0):
-    """
-    Заповнює дах панелями з урахуванням відстаней між ними та відступів від країв.
-    border_x, border_y - мінімальний відступ від усіх 4 країв даху.
-    """
-    
-    # Фактична доступна площа даху для розміщення панелей
-    available_length = roof.length - 2 * border_x
-    available_width = roof.width - 2 * border_y
+def _lattice_counts(L, W, m_x, m_y, gx, gy, w, h):
+    """Etap 1: Układ kratowy. Zwraca nx, ny, N, coverage_eff, i współrzędne początkowe
+    z symetrycznym centrowaniem wewnątrz ramki. (Етап 1: Ґратчасте укладання. Повертає nx, ny, N, coverage_eff, і стартові координати
+    із симетричним центруванням усередині рамки)."""
+    L_eff = L - 2 * m_x
+    W_eff = W - 2 * m_y
+    if L_eff <= 0 or W_eff <= 0:
+        return 0, 0, 0, 0.0, m_x, m_y
 
-    effective_width = panel.width + panel.gap_x
-    effective_height = panel.height + panel.gap_y
+    nx = int((L_eff + gx) // (w + gx))
+    ny = int((W_eff + gy) // (h + gy))
+    N = nx * ny
 
-    cols = int(available_length // effective_width)
-    rows = int(available_width // effective_height)
-    
-    if cols < 0: cols = 0
-    if rows < 0: rows = 0
-        
-    total_panels = cols * rows
+    used_L = nx * w + max(nx - 1, 0) * gx
+    used_W = ny * h + max(ny - 1, 0) * gy
+    start_x = m_x + 0.5 * (L_eff - used_L)
+    start_y = m_y + 0.5 * (W_eff - used_W)
 
-    if cols > 0:
-        used_width_panels = cols * panel.width + (cols - 1) * panel.gap_x
-        used_width = used_width_panels + 2 * border_x
+    coverage_eff = (N * w * h) / (L_eff * W_eff) if L_eff > 0 and W_eff > 0 else 0.0
+    return nx, ny, N, coverage_eff, start_x, start_y
+
+
+def best_orientation(L, W, m_x, m_y, gx, gy, w_portrait=1000, h_portrait=1700):
+    """Wybór orientacji (portret/krajobraz) według maksymalnej liczby paneli N*. (Вибір портрет/ландшафт за максимальним N*)."""
+    # portrait
+    nx_p, ny_p, N_p, cov_p, _, _ = _lattice_counts(L, W, m_x, m_y, gx, gy, w_portrait, h_portrait)
+    # landscape
+    nx_l, ny_l, N_l, cov_l, _, _ = _lattice_counts(L, W, m_x, m_y, gx, gy, h_portrait, w_portrait)
+
+    if N_l > N_p:
+        return {
+            "orientation": "landscape", # ЗАЛИШЕНО АНГЛІЙСЬКУ
+            "w": h_portrait, "h": w_portrait,
+            "nx": nx_l, "ny": ny_l, "N": N_l, "coverage_eff": cov_l
+        }
     else:
-        used_width = 0
+        return {
+            "orientation": "portrait", # ЗАЛИШЕНО АНГЛІЙСЬКУ
+            "w": w_portrait, "h": h_portrait,
+            "nx": nx_p, "ny": ny_p, "N": N_p, "coverage_eff": cov_p
+        }
 
-    if rows > 0:
-        used_height_panels = rows * panel.height + (rows - 1) * panel.gap_y
-        used_height = used_height_panels + 2 * border_y
+
+def fill_roof_with_panels(roof, panel, border_x=0, border_y=0, orientation="auto"):
+    """Zwraca rozkład dla jednej połaci z uwzględnieniem orientacji.
+       orientation ∈ {"auto","portrait","landscape"} (Повертає розкладку для однієї схилу з урахуванням орієнтації)."""
+    if orientation == "auto":
+        choice = best_orientation(
+            roof.length, roof.width, border_x, border_y,
+            panel.gap_x, panel.gap_y, panel.width, panel.height
+        )
+        w, h = choice["w"], choice["h"]
+        nx, ny, N, cov, start_x, start_y = _lattice_counts(
+            roof.length, roof.width, border_x, border_y,
+            panel.gap_x, panel.gap_y, w, h
+        )
+        ori = choice["orientation"]
     else:
-        used_height = 0
-
-    coverage = (used_width * used_height) / roof.area() if roof.area() > 0 else 0
+        if orientation == "portrait":
+            w, h = panel.width, panel.height
+        elif orientation == "landscape":
+            w, h = panel.height, panel.width
+        else:
+            # Виправлене повідомлення про помилку: англійське значення з польським поясненням
+            raise ValueError("orientation must be auto|portrait|landscape (orientacja musi być auto|portret|krajobraz)")
+        nx, ny, N, cov, start_x, start_y = _lattice_counts(
+            roof.length, roof.width, border_x, border_y,
+            panel.gap_x, panel.gap_y, w, h
+        )
+        ori = orientation
 
     return {
-        "rows": rows,
-        "cols": cols,
-        "total_panels": total_panels,
-        "coverage": coverage,
-        "used_width": used_width,
-        "used_height": used_height,
-        "border_x": border_x, 
-        "border_y": border_y
+        "rows": ny,
+        "cols": nx,
+        "total_panels": N,
+        "coverage_eff": cov,
+        "border_x": border_x,
+        "border_y": border_y,
+        "start_x": start_x,
+        "start_y": start_y,
+        "panel_w": w,
+        "panel_h": h,
+        "orientation": ori
     }

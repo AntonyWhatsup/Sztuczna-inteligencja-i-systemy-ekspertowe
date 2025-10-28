@@ -1,13 +1,6 @@
 # roof.py
-
 class Roof:
-    def __init__(self, width: float, length: float):
-        """
-        width, length – розміри даху (мм або м)
-        """
-        self.width = width
-        self.length = length
-
-    def area(self) -> float:
-        """Повертає площу даху."""
-        return self.width * self.length
+    """Model płaszczyzny dachu (Модель площини даху)."""
+    def __init__(self, width, length):
+        self.width = width   # Szerokość połaci (od kalenicy do krawędzi) (Ширина схилу (від гребеня до краю))
+        self.length = length # Długość dachu (Довжина даху)
