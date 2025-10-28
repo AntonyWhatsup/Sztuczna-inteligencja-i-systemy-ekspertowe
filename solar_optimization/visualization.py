@@ -1,89 +1,94 @@
-# visualization.py
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 
-def draw_roof(ax, roof, panel, data, offset_y=0, flip=False):
-    """Малює одну площину даху."""
-    start_x = data.get("border_x", 0)
-    start_y = data.get("border_y", 0)
+ORANGE = "#ff8c00"  # рамка запрета монтажа 300 мм
 
-    for i in range(data["rows"]):
-        for j in range(data["cols"]):
-            x = start_x + j * (panel.width + panel.gap_x)
-            y = start_y + i * (panel.height + panel.gap_y)
-
-            if flip:
-                # Дзеркально для верхньої площини
-                y = roof.width - (start_y + i * (panel.height + panel.gap_y) + panel.height)
-
-            y += offset_y
-            rect = plt.Rectangle(
-                (x, y),
-                panel.width,
-                panel.height,
-                edgecolor='blue',
-                facecolor='skyblue',
-                alpha=0.7,
-                zorder=2
-            )
-            ax.add_patch(rect)
-
-
-def draw_two_mirrored_roofs(roof_upper, roof_lower, panel, data_upper, data_lower, border=0, gap_between_planes=200):
+def _draw_single_roof(ax, roof, panel, data, title=None):
     """
-    Малює дві дзеркальні площини, розділені червоною лінією (гребенем),
-    яка є точкою відліку (0). В обох напрямках (вгору і вниз) координати додатні.
+    Одна половина крыши со своей шкалой 0..W (мм).
+    y=0 — гребень (рисуем тёмно-серым пунктиром).
     """
-    fig, ax = plt.subplots(figsize=(12, 10))
+    # оси и гребень
+    ax.set_xlim(0, roof.length)
+    ax.set_ylim(0, roof.width)
+    ax.axhline(0, color="dimgray", linestyle="--", linewidth=1.2)
 
-    # --- Конфігурація ---
-    red_line_y = roof_lower.width + gap_between_planes / 2  # гребінь посередині
-    total_height = roof_upper.width + roof_lower.width + gap_between_planes
-    max_length = max(roof_upper.length, roof_lower.length)
+    # внешний контур половины крыши
+    ax.add_patch(Rectangle((0, 0), roof.length, roof.width,
+                           linewidth=1.0, edgecolor="black", facecolor="none"))
 
-    # --- Нижня площина ---
-    # Відлік іде вниз від гребеня, але координати залишаються додатними
-    offset_lower = 0
-    draw_roof(ax, roof_lower, panel, data_lower, offset_y=offset_lower, flip=False)
+    # рамка запрета установки (300 мм) — оранжевым
+    bx = data.get("border_x", 300)
+    by = data.get("border_y", 300)
+    ax.add_patch(Rectangle((bx, by),
+                           roof.length - 2*bx, roof.width - 2*by,
+                           linewidth=1.2, edgecolor=ORANGE, facecolor="none"))
 
-    # --- Верхня площина ---
-    offset_upper = roof_lower.width + gap_between_planes
-    draw_roof(ax, roof_upper, panel, data_upper, offset_y=offset_upper, flip=True)
+    # параметры укладки
+    w, h = data["panel_w"], data["panel_h"]
+    nx, ny = data["cols"], data["rows"]
+    sx, sy = data.get("start_x", bx), data.get("start_y", by)
+    gx, gy = getattr(panel, "gap_x", 0), getattr(panel, "gap_y", 0)
+    cm = getattr(panel, "clamp_margin", 30)
 
-    # --- Червона лінія (нуль) ---
-    ax.axhline(y=red_line_y, color='red', linewidth=3, zorder=3)
-    ax.text(-max_length * 0.02, red_line_y, "0 (ГРЕБІНЬ)", color='red',
-            va='center', ha='right', fontsize=12, fontweight='bold')
+    # панели — голубая заливка, синие края
+    for r in range(ny):
+        y = sy + r * (h + gy)
+        for c in range(nx):
+            x = sx + c * (w + gx)
+            ax.add_patch(Rectangle((x, y), w, h,
+                                   linewidth=1.0, edgecolor="tab:blue",
+                                   facecolor="skyblue", alpha=0.35))
+            if w > 2*cm and h > 2*cm:
+                ax.add_patch(Rectangle((x + cm, y + cm),
+                                       w - 2*cm, h - 2*cm,
+                                       linewidth=0.8, edgecolor="gray",
+                                       facecolor="none", linestyle="--"))
 
-    # --- Формування подвійної осі Y ---
-    all_ticks, all_labels = [], []
-    step = 1000
+    ax.grid(True, linestyle=":", linewidth=0.5)
+    if title:
+        ax.set_title(title, fontsize=10)
+    ax.set_xlabel("Длина (мм)")
+    ax.set_ylabel("Расстояние от гребня (мм)")
 
-    # Вниз від гребеня (нижня площина)
-    for i in range(0, int(roof_lower.width / step) + 1):
-        tick = red_line_y - i * step
-        if tick >= 0:
-            all_ticks.append(tick)
-            all_labels.append(f"{i*step}")
+def draw_two_roofs_columns(roof_left, roof_right, panel, data_left, data_right):
+    """
+    Две половины крыши в два ряда, у каждой шкала 0..W мм.
+    Верхняя: 0 внизу (от гребня вверх). Нижняя: 0 вверху (от гребня вниз).
+    Легенда: W, L, N, площадь панелей, площадь połaci — для каждой половины.
+    """
+    fig, (ax_top, ax_bot) = plt.subplots(nrows=2, ncols=1, figsize=(14, 8), sharex=False)
+    fig.subplots_adjust(hspace=0.25)
 
-    # Вгору від гребеня (верхня площина)
-    for i in range(1, int(roof_upper.width / step) + 1):
-        tick = red_line_y + i * step
-        if tick <= total_height:
-            all_ticks.append(tick)
-            all_labels.append(f"{i*step}")
+    # верхняя половина
+    _draw_single_roof(ax_top, roof_left, panel, data_left, title="Левая половина")
+    # нижняя половина: инвертируем ось Y, чтобы 0 был наверху
+    _draw_single_roof(ax_bot, roof_right, panel, data_right, title="Правая половина")
+    ax_bot.invert_yaxis()
 
-    ax.set_yticks(all_ticks)
-    ax.set_yticklabels(all_labels)
+    # метрики для легенды
+    def metrics(roof, data):
+        N = data["total_panels"]
+        w, h = data["panel_w"], data["panel_h"]
+        A_panels_m2 = N * w * h / 1e6
+        A_roof_m2 = roof.length * roof.width / 1e6
+        return N, A_panels_m2, A_roof_m2
 
-    # --- Межі графіка ---
-    ax.set_xlim(-border / 2, max_length + border / 2)
-    ax.set_ylim(0, total_height)
-    ax.set_aspect('equal')
+    N_L, APL, ARL = metrics(roof_left, data_left)
+    N_R, APR, ARR = metrics(roof_right, data_right)
 
-    ax.grid(True, linestyle="--", alpha=0.5)
-    ax.set_title("Dwuspadowy dach — Відлік від гребеня (0) в обидва боки")
-    ax.set_xlabel("Długość (mm)")
-    ax.set_ylabel("Відстань від гребеня (мм)")
+    legend = (
+        f"Левая: W={roof_left.width} мм, L={roof_left.length} мм, N={N_L}, "
+        f"Апанелей={APL:.2f} м², Аплощади={ARL:.2f} м² | "
+        f"Правая: W={roof_right.width} мм, L={roof_right.length} мм, N={N_R}, "
+        f"Апанелей={APR:.2f} м², Аплощади={ARR:.2f} м² "
+        f"(border=300 мм, clamp=30 мм, gaps: gx={panel.gap_x} мм, gy={panel.gap_y} мм)"
+    )
+    fig.suptitle(legend, fontsize=9)
 
     plt.tight_layout()
     plt.show()
+
+# алиас для совместимости со старым импортом
+def draw_two_mirrored_roofs(roof_left, roof_right, panel, data_left, data_right, border=300):
+    return draw_two_roofs_columns(roof_left, roof_right, panel, data_left, data_right)
