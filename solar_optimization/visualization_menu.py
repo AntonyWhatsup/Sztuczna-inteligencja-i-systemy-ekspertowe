@@ -1,118 +1,110 @@
 # visualization_menu.py
 import os
+import sys
+import subprocess
 import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk
-import subprocess
-import sys
 
 # ---- Шляхи ----
 BASE_DIR = os.path.dirname(__file__)
-# ! ВИПРАВЛЕННЯ ШЛЯХУ: Тепер 'results' шукається у тій самій директорії, що й BASE_DIR
 RESULTS_DIR = os.path.abspath(os.path.join(BASE_DIR, "results"))
 
-
 VISUALIZATION_TOP = os.path.join(BASE_DIR, "visualization.py")
+VISUALIZATION_EA = os.path.join(BASE_DIR, "visualization_ea.py")
 VISUALIZATION_SIDE = os.path.join(BASE_DIR, "visualization_side.py")
 
 
 class GraphMenu:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("📊 Меню візуалізацій")
-        self.root.geometry("480x520")
+    def __init__(self, master: tk.Tk):
+        self.master = master
+        master.title("Solar layout – menu")
+        master.geometry("800x600")
 
-        tk.Label(root, text="Результати збережені в:", font=("Arial", 11, "bold")).pack(pady=(10, 0))
-        tk.Label(root, text=RESULTS_DIR, fg="gray").pack(pady=(0, 5))
+        # Верхній фрейм з кнопками
+        btn_frame = tk.Frame(master)
+        btn_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=10)
 
-        self.listbox = tk.Listbox(root, width=60, height=15)
-        self.listbox.pack(padx=10, pady=10)
+        self.btn_top = tk.Button(
+            btn_frame, text="Top view (класичний)",
+            command=lambda: self.run_script(VISUALIZATION_TOP)
+        )
+        self.btn_top.pack(side=tk.LEFT, padx=5)
 
-        tk.Button(root, text="🔄 Оновити список", command=self.refresh_list).pack(pady=5)
-        tk.Button(root, text="🔍 Відкрити вибраний файл", command=self.open_selected).pack(pady=5)
+        self.btn_ea = tk.Button(
+            btn_frame, text="Top view (GA / 10 поколінь)",
+            command=lambda: self.run_script(VISUALIZATION_EA)
+        )
+        self.btn_ea.pack(side=tk.LEFT, padx=5)
 
-        tk.Label(root, text="Запустити візуалізацію:", font=("Arial", 11, "bold")).pack(pady=(15, 0))
-        tk.Button(root, text="📈 Top View (РОЗРАХУНОК)", command=lambda: self.open_script(VISUALIZATION_TOP)).pack(pady=2)
-        tk.Button(root, text="🏠 Side View (Демо)", command=lambda: self.open_script(VISUALIZATION_SIDE)).pack(pady=2)
+        self.btn_side = tk.Button(
+            btn_frame, text="Side view",
+            command=lambda: self.run_script(VISUALIZATION_SIDE)
+        )
+        self.btn_side.pack(side=tk.LEFT, padx=5)
 
-        tk.Button(root, text="❌ Закрити меню", command=self.root.destroy).pack(pady=15)
+        self.btn_refresh = tk.Button(
+            btn_frame, text="Оновити превʼю",
+            command=self.refresh_preview
+        )
+        self.btn_refresh.pack(side=tk.RIGHT, padx=5)
 
-        self.refresh_list()
+        # Поле під превʼю
+        preview_frame = tk.Frame(master, bd=2, relief=tk.SUNKEN)
+        preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-    def refresh_list(self):
-        """Оновлює список результатів"""
-        self.listbox.delete(0, tk.END)
-        os.makedirs(RESULTS_DIR, exist_ok=True)
-        files = [f for f in os.listdir(RESULTS_DIR) if f.lower().endswith((".png", ".csv", ".txt"))]
-        if not files:
-            self.listbox.insert(tk.END, "❗ Немає збережених результатів")
-        else:
-            for f in sorted(files):
-                self.listbox.insert(tk.END, f)
+        self.canvas = tk.Label(preview_frame, text="Тут буде останній PNG із results/")
+        self.canvas.pack(expand=True)
 
-    def open_selected(self):
-        """Відкрити вибраний файл"""
-        selection = self.listbox.curselection()
-        if not selection:
-            messagebox.showwarning("Увага", "Виберіть файл зі списку.")
+        self.current_image = None   # посилання на ImageTk, щоб не збирав GC
+
+        # Завантажити щось, якщо вже є
+        self.refresh_preview()
+
+    # ---------- допоміжні методи ----------
+
+    def _find_latest_png(self) -> str | None:
+        """Шукає останній PNG у RESULTS_DIR."""
+        if not os.path.isdir(RESULTS_DIR):
+            return None
+        pngs = [
+            os.path.join(RESULTS_DIR, f)
+            for f in os.listdir(RESULTS_DIR)
+            if f.lower().endswith(".png")
+        ]
+        if not pngs:
+            return None
+        pngs.sort(key=os.path.getmtime, reverse=True)
+        return pngs[0]
+
+    def refresh_preview(self) -> None:
+        png_path = self._find_latest_png()
+        if not png_path:
+            self.canvas.config(text="Немає PNG у папці results/")
+            self.current_image = None
             return
 
-        filename = self.listbox.get(selection[0])
-        if "❗" in filename:
-            return
-
-        path = os.path.join(RESULTS_DIR, filename)
-        self.show_file(path)
-
-    def show_file(self, path):
-        """Відображає вибраний файл (зображення або текст)"""
-        if path.lower().endswith(".png"):
-            self.show_image(path)
-        elif path.lower().endswith((".csv", ".txt")):
-            self.show_text(path)
-        else:
-            messagebox.showinfo("Файл", f"Тип файлу не підтримується: {path}")
-
-    def show_image(self, path):
-        top = tk.Toplevel(self.root)
-        top.title(os.path.basename(path))
         try:
-            img = Image.open(path)
-            img.thumbnail((900, 700))
-            photo = ImageTk.PhotoImage(img)
-            label = tk.Label(top, image=photo)
-            label.image = photo
-            label.pack()
-            tk.Button(top, text="Закрити", command=top.destroy).pack(pady=10)
+            img = Image.open(png_path)
+            # зменшимо, щоб влізло в вікно
+            img.thumbnail((760, 460))
+            imgtk = ImageTk.PhotoImage(img)
+            self.canvas.config(image=imgtk, text="")
+            self.canvas.image = imgtk  # щоб не зібрав GC
+            self.current_image = imgtk
         except Exception as e:
-            messagebox.showerror("Помилка зображення", f"Не вдалося відкрити зображення:\n{e}")
+            self.canvas.config(text=f"Не вдалося завантажити {png_path}\n{e}")
+            self.current_image = None
 
-    def show_text(self, path):
-        top = tk.Toplevel(self.root)
-        top.title(os.path.basename(path))
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                content = f.read()
-        except Exception as e:
-            content = f"Помилка читання файлу: {e}"
-            
-        text = tk.Text(top, wrap="word", width=100, height=30)
-        text.insert("1.0", content)
-        text.config(state="disabled")
-        text.pack(padx=10, pady=10)
-        tk.Button(top, text="Закрити", command=top.destroy).pack(pady=10)
-
-    def open_script(self, script_path):
-        """Запускає окремий файл візуалізації"""
+    def run_script(self, script_path: str) -> None:
         if not os.path.exists(script_path):
             messagebox.showerror("Помилка", f"Не знайдено файл: {script_path}")
             return
         try:
-            print(f"Запуск скрипту: {sys.executable} {script_path}")
-            # subprocess.Popen запускає скрипт і дозволяє меню працювати далі
+            print(f"Запуск: {sys.executable} {script_path}")
             subprocess.Popen([sys.executable, script_path])
         except Exception as e:
-            messagebox.showerror("Помилка", f"Не вдалося відкрити {script_path}\n{e}")
+            messagebox.showerror("Помилка", f"Не вдалося запустити {script_path}\n{e}")
 
 
 if __name__ == "__main__":
