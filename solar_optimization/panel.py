@@ -10,11 +10,7 @@ class Panel:
         self.clamp_margin = clamp_margin
 
 # ---------- GRID ----------
-def _lattice_counts(L, W, m_x, m_y, gx, gy, w, h, align_x="center", align_y="center"):
-    """
-    Рахує сітку з урахуванням вирівнювання (align_x, align_y).
-    align_y="top" означає вирівнювання до m_y (ближче до kalenicy)
-    """
+def _lattice_counts(L, W, m_x, m_y, gx, gy, w, h):
     L_eff = L - 2*m_x
     W_eff = W - 2*m_y
     if L_eff <= 0 or W_eff <= 0:
@@ -22,38 +18,16 @@ def _lattice_counts(L, W, m_x, m_y, gx, gy, w, h, align_x="center", align_y="cen
     nx = int((L_eff + gx)//(w + gx))
     ny = int((W_eff + gy)//(h + gy))
     N  = nx*ny
-    
-    # Розрахунок використаного простору та "залишку" (slack)
     used_L = nx*w + max(nx-1,0)*gx
     used_W = ny*h + max(ny-1,0)*gy
-    slack_L = L_eff - used_L
-    slack_W = W_eff - used_W
-
-    # --- Нова логіка вирівнювання ---
-    # По X (Długość)
-    if align_x == "left":
-        sx = m_x
-    elif align_x == "right":
-        sx = m_x + slack_L  # (L - m_x - used_L)
-    else: # "center"
-        sx = m_x + 0.5*slack_L
-
-    # По Y (Odległość od kalenicy)
-    if align_y == "top": # 'top' = біля 'kalenicy', y=m_y
-        sy = m_y
-    elif align_y == "bottom":
-        sy = m_y + slack_W # (W - m_y - used_W)
-    else: # "center"
-        sy = m_y + 0.5*slack_W
-    # --- Кінець нової логіки ---
-
+    sx = m_x + 0.5*(L_eff - used_L)
+    sy = m_y + 0.5*(W_eff - used_W)
     cov = (N*w*h)/(L_eff*W_eff) if L_eff>0 and W_eff>0 else 0.0
     return nx, ny, N, cov, sx, sy
 
 def best_orientation(L, W, m_x, m_y, gx, gy, w_portrait=1000, h_portrait=1700):
-    # Оцінюємо ТІЛЬКИ по центральному розміщенню, щоб обрати орієнтацію
-    nx_p, ny_p, N_p, cov_p, *_ = _lattice_counts(L, W, m_x, m_y, gx, gy, w_portrait, h_portrait, "center", "center")
-    nx_l, ny_l, N_l, cov_l, *_ = _lattice_counts(L, W, m_x, m_y, gx, gy, h_portrait, w_portrait, "center", "center")
+    nx_p, ny_p, N_p, cov_p, *_ = _lattice_counts(L, W, m_x, m_y, gx, gy, w_portrait, h_portrait)
+    nx_l, ny_l, N_l, cov_l, *_ = _lattice_counts(L, W, m_x, m_y, gx, gy, h_portrait, w_portrait)
     if N_l > N_p:
         return {"orientation":"landscape","w":h_portrait,"h":w_portrait,
                 "nx":nx_l,"ny":ny_l,"N":N_l,"coverage_eff":cov_l}
@@ -61,10 +35,8 @@ def best_orientation(L, W, m_x, m_y, gx, gy, w_portrait=1000, h_portrait=1700):
         return {"orientation":"portrait","w":w_portrait,"h":h_portrait,
                 "nx":nx_p,"ny":ny_p,"N":N_p,"coverage_eff":cov_p}
 
-def fill_roof_with_panels(roof, panel, border_x=0, border_y=0, orientation="auto", 
-                          align_x="center", align_y="center"):
+def fill_roof_with_panels(roof, panel, border_x=0, border_y=0, orientation="auto"):
     if orientation=="auto":
-        # Якщо auto, запускаємо best_orientation, яка вже використовує 'center'
         ch = best_orientation(roof.length, roof.width, border_x, border_y,
                               panel.gap_x, panel.gap_y, panel.width, panel.height)
         w, h = ch["w"], ch["h"]; ori = ch["orientation"]
@@ -76,12 +48,8 @@ def fill_roof_with_panels(roof, panel, border_x=0, border_y=0, orientation="auto
         else:
             raise ValueError("orientation must be auto|portrait|landscape")
         ori = orientation
-    
-    # Передаємо параметри вирівнювання в _lattice_counts
     nx, ny, N, cov, sx, sy = _lattice_counts(roof.length, roof.width, border_x, border_y,
-                                             panel.gap_x, panel.gap_y, w, h,
-                                             align_x=align_x, align_y=align_y)
-                                             
+                                             panel.gap_x, panel.gap_y, w, h)
     return {"rows":ny,"cols":nx,"total_panels":N,"coverage_eff":cov,
             "border_x":border_x,"border_y":border_y,"start_x":sx,"start_y":sy,
             "panel_w":w,"panel_h":h,"orientation":ori}
@@ -125,10 +93,6 @@ def _can_place(x, y, w, h, masks):
         if _overlap(x,y,w,h, mx,my,mw,mh):
             return False
     return True
-
-# --- (Функції _recenter_grid, _edge_free_widths, _place_portrait_columns, 
-# --- і augment_with_shifted_portrait більше не використовуються в main.py, 
-# --- але ми можемо їх залишити, вони не заважають) ---
 
 def _recenter_grid(data, roof, panel, side:str):
     m_x = data["border_x"]; gx = panel.gap_x
@@ -227,16 +191,16 @@ def _free_intervals(base, blocks):
 
 def augment_with_gap_portraits(roof, panel, data, obstacles=None):
     """
-    Після базового GRID+obstacles скануємо кожен «ряд по Y» і допаковуємо
-    портретні панелі (1000x1700) в будь-які вільні інтервали по X.
-    Пробуємо два вертикальних офсети: 0 і (h+gap)/2. Вибираємо найкращий.
+    После базового GRID+obstacles сканируем каждый «ряд по Y» и допаковываем
+    портретные панели (1000x1700) в любые свободные интервалы по X.
+    Пробуем два вертикальных офсета: 0 и (h+gap)/2. Выбираем лучший.
     """
     bx, by = data["border_x"], data["border_y"]
     L, W   = roof.length, roof.width
     gx, gy = panel.gap_x, panel.gap_y
     pw, ph = panel.width, panel.height  # portrait
 
-    # маски: перешкоди (inflated) + вже укладені панелі (розширені на gap)
+    # маски: препятствия (inflated) + уже уложенные панели (расширенные на gap)
     base_masks = []
     for ob in (obstacles or []):
         base_masks.append(_inflate_rect_any(ob))
@@ -248,18 +212,18 @@ def augment_with_gap_portraits(roof, panel, data, obstacles=None):
         added = []
         y = by + y_off
         while y + ph <= W - by + 1e-9:
-            # блокуючі інтервали по X для смуги [y, y+ph]
+            # блокирующие интервалы по X для полосы [y, y+ph]
             blocks = []
             for (mx, my, mw, mh) in masks:
                 if not (y + ph <= my or my + mh <= y):
                     blocks.append((mx, mx + mw))
-            # вільні інтервали і укладання колонками
+            # свободные интервалы и укладка колонками
             for a, b in _free_intervals((bx, L - bx), blocks):
                 length = b - a
                 k = int((length + gx) // (pw + gx))
                 if k <= 0: 
                     continue
-                x0 = a  # вирівнюємо до лівого краю інтервалу
+                x0 = a  # выравниваем к левому краю интервала
                 for i in range(k):
                     x = x0 + i * (pw + gx)
                     if _can_place(x, y, pw, ph, masks):

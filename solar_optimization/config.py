@@ -43,6 +43,7 @@ class Config:
                     clearance=200, elev=500, type="chimney", cap_over=80)
     ])
 
-    out_dir: str = "out"
+    # ВАЖЛИВО: Змінено "out" на "results" для інтеграції з GUI
+    out_dir: str = "results"
     save_png: bool = True
     save_csv: bool = True
