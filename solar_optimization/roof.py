@@ -1,6 +1,6 @@
 # roof.py
 class Roof:
-    """Model płaszczyzny dachu (Модель площини даху)."""
+    """Roof plane model."""
     def __init__(self, width, length):
-        self.width = width   # Szerokość połaci (od kalenicy do krawędzi) (Ширина схилу (від гребеня до краю))
-        self.length = length # Długość dachu (Довжина даху)
+        self.width = width   # Slope width (from ridge to edge)
+        self.length = length # Roof length

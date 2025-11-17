@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import messagebox
 from PIL import Image, ImageTk
 
-# ---- Шляхи ----
+# ---- Paths ----
 BASE_DIR = os.path.dirname(__file__)
 RESULTS_DIR = os.path.abspath(os.path.join(BASE_DIR, "results"))
 
@@ -21,18 +21,18 @@ class GraphMenu:
         master.title("Solar layout – menu")
         master.geometry("800x600")
 
-        # Верхній фрейм з кнопками
+        # Top frame with buttons
         btn_frame = tk.Frame(master)
         btn_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=10)
 
         self.btn_top = tk.Button(
-            btn_frame, text="Top view (класичний)",
+            btn_frame, text="Top view (classic)",
             command=lambda: self.run_script(VISUALIZATION_TOP)
         )
         self.btn_top.pack(side=tk.LEFT, padx=5)
 
         self.btn_ea = tk.Button(
-            btn_frame, text="Top view (GA / 10 поколінь)",
+            btn_frame, text="Top view (GA / 10 generations)",
             command=lambda: self.run_script(VISUALIZATION_EA)
         )
         self.btn_ea.pack(side=tk.LEFT, padx=5)
@@ -44,27 +44,27 @@ class GraphMenu:
         self.btn_side.pack(side=tk.LEFT, padx=5)
 
         self.btn_refresh = tk.Button(
-            btn_frame, text="Оновити превʼю",
+            btn_frame, text="Refresh preview",
             command=self.refresh_preview
         )
         self.btn_refresh.pack(side=tk.RIGHT, padx=5)
 
-        # Поле під превʼю
+        # Frame for preview
         preview_frame = tk.Frame(master, bd=2, relief=tk.SUNKEN)
         preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        self.canvas = tk.Label(preview_frame, text="Тут буде останній PNG із results/")
+        self.canvas = tk.Label(preview_frame, text="Latest PNG from results/ will appear here")
         self.canvas.pack(expand=True)
 
-        self.current_image = None   # посилання на ImageTk, щоб не збирав GC
+        self.current_image = None   # reference to ImageTk to prevent GC
 
-        # Завантажити щось, якщо вже є
+        # Load something if available
         self.refresh_preview()
 
-    # ---------- допоміжні методи ----------
+    # ---------- helper methods ----------
 
     def _find_latest_png(self) -> str | None:
-        """Шукає останній PNG у RESULTS_DIR."""
+        """Find the latest PNG in RESULTS_DIR."""
         if not os.path.isdir(RESULTS_DIR):
             return None
         pngs = [
@@ -80,31 +80,31 @@ class GraphMenu:
     def refresh_preview(self) -> None:
         png_path = self._find_latest_png()
         if not png_path:
-            self.canvas.config(text="Немає PNG у папці results/")
+            self.canvas.config(text="No PNG in results/ folder")
             self.current_image = None
             return
 
         try:
             img = Image.open(png_path)
-            # зменшимо, щоб влізло в вікно
+            # resize to fit window
             img.thumbnail((760, 460))
             imgtk = ImageTk.PhotoImage(img)
             self.canvas.config(image=imgtk, text="")
-            self.canvas.image = imgtk  # щоб не зібрав GC
+            self.canvas.image = imgtk  # prevent GC
             self.current_image = imgtk
         except Exception as e:
-            self.canvas.config(text=f"Не вдалося завантажити {png_path}\n{e}")
+            self.canvas.config(text=f"Failed to load {png_path}\n{e}")
             self.current_image = None
 
     def run_script(self, script_path: str) -> None:
         if not os.path.exists(script_path):
-            messagebox.showerror("Помилка", f"Не знайдено файл: {script_path}")
+            messagebox.showerror("Error", f"File not found: {script_path}")
             return
         try:
-            print(f"Запуск: {sys.executable} {script_path}")
+            print(f"Running: {sys.executable} {script_path}")
             subprocess.Popen([sys.executable, script_path])
         except Exception as e:
-            messagebox.showerror("Помилка", f"Не вдалося запустити {script_path}\n{e}")
+            messagebox.showerror("Error", f"Failed to run {script_path}\n{e}")
 
 
 if __name__ == "__main__":

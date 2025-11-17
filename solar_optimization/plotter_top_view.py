@@ -3,7 +3,7 @@ import os
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
-ORANGE = "#ff8c00"  # border 300 mm + clearance przeszkód
+ORANGE = "#ff8c00"  # 300 mm border + obstacle clearance
 
 def _inflate_rect(ob):
     if isinstance(ob, dict):
@@ -21,7 +21,7 @@ def _inflate_rect(ob):
 def _draw_obstacles(ax, obstacles):
     for ob in obstacles:
         (x, y, w, h), (xi, yi, wi, hi), typ, p = _inflate_rect(ob)
-        # strefa zakazu wokół przeszkody
+        # forbidden zone around the obstacle
         ax.add_patch(Rectangle((xi, yi), wi, hi,
                                linewidth=1.2, edgecolor=ORANGE,
                                facecolor=ORANGE, alpha=0.12, hatch="////"))
@@ -48,7 +48,7 @@ def _draw_obstacles(ax, obstacles):
 def _draw_single_roof(ax, roof, panel, data, obstacles=None, title=None):
     ax.set_xlim(0, roof.length)
     ax.set_ylim(0, roof.width)
-    ax.axhline(0, color="dimgray", linestyle="--", linewidth=1.2)  # kalenica
+    ax.axhline(0, color="dimgray", linestyle="--", linewidth=1.2)  # ridge
 
     ax.add_patch(Rectangle((0, 0), roof.length, roof.width, linewidth=1.0, edgecolor="black", facecolor="none"))
     bx = data.get("border_x", 300); by = data.get("border_y", 300)
@@ -74,7 +74,7 @@ def _draw_single_roof(ax, roof, panel, data, obstacles=None, title=None):
 
     ax.grid(True, linestyle=":", linewidth=0.5)
     if title: ax.set_title(title, fontsize=10)
-    ax.set_xlabel("Długość (mm)"); ax.set_ylabel("Odległość od kalenicy (mm)")
+    ax.set_xlabel("Length (mm)"); ax.set_ylabel("Distance from ridge (mm)")
 
 def draw_two_roofs_columns(roof_left, roof_right, panel, data_left, data_right,
                            obstacles_left=None, obstacles_right=None,
@@ -82,8 +82,8 @@ def draw_two_roofs_columns(roof_left, roof_right, panel, data_left, data_right,
     fig, (ax_top, ax_bot) = plt.subplots(nrows=2, ncols=1, figsize=(14, 8), sharex=False)
     fig.subplots_adjust(hspace=0.25)
 
-    _draw_single_roof(ax_top, roof_left,  panel, data_left,  obstacles=obstacles_left,  title="Lewa Połać")
-    _draw_single_roof(ax_bot, roof_right, panel, data_right, obstacles=obstacles_right, title="Prawa Połać")
+    _draw_single_roof(ax_top, roof_left,  panel, data_left,  obstacles=obstacles_left,  title="Left Roof")
+    _draw_single_roof(ax_bot, roof_right, panel, data_right, obstacles=obstacles_right, title="Right Roof")
     ax_bot.invert_yaxis()
 
     def metrics(roof, data):
@@ -93,11 +93,11 @@ def draw_two_roofs_columns(roof_left, roof_right, panel, data_left, data_right,
     N_L, APL, ARL = metrics(roof_left, data_left)
     N_R, APR, ARR = metrics(roof_right, data_right)
 
-    legend = (f"Lewa: W={roof_left.width} mm, L={roof_left.length} mm, N={N_L}, "
-              f"Apaneli={APL:.2f} m², Adachu={ARL:.2f} m² | "
-              f"Prawa: W={roof_right.width} mm, L={roof_right.length} mm, N={N_R}, "
-              f"Apaneli={APR:.2f} m², Adachu={ARR:.2f} m² "
-              f"(border=300 mm; strefy zakazu=orange; clamp=30 mm; "
+    legend = (f"Left: W={roof_left.width} mm, L={roof_left.length} mm, N={N_L}, "
+              f"PanelsArea={APL:.2f} m², RoofArea={ARL:.2f} m² | "
+              f"Right: W={roof_right.width} mm, L={roof_right.length} mm, N={N_R}, "
+              f"PanelsArea={APR:.2f} m², RoofArea={ARR:.2f} m² "
+              f"(border=300 mm; forbidden zones=orange; clamp=30 mm; "
               f"gaps: gx={panel.gap_x} mm, gy={panel.gap_y} mm)")
     fig.suptitle(legend, fontsize=9)
 
